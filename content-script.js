@@ -23,6 +23,67 @@
   // Navigation cooldown to avoid heavy re-renders during first SPA navigation
   let navCooldownUntil = 0;
 
+;(function(){
+  try {
+    if (window.__ccNavGuardApplied) return;
+    window.__ccNavGuardApplied = true;
+
+    var lastUrl = location.href;
+    var lastTs = 0;
+    var throttleMs = 800;
+
+    function norm(href){
+      try { return new URL(href, location.href).href; } catch (_) { return href + ""; }
+    }
+
+    function shouldSkip(url){
+      var now = Date.now();
+      if (url === lastUrl && (now - lastTs) < throttleMs) return true;
+      lastUrl = url;
+      lastTs = now;
+      return false;
+    }
+
+    var origPush = history.pushState;
+    var origReplace = history.replaceState;
+
+    if (typeof origPush === 'function') {
+      history.pushState = function(state, title, url){
+        var target = url == null ? location.href : norm(url);
+        if (shouldSkip(target)) return;
+        return origPush.apply(this, arguments);
+      };
+    }
+
+    if (typeof origReplace === 'function') {
+      history.replaceState = function(state, title, url){
+        var target = url == null ? location.href : norm(url);
+        if (shouldSkip(target)) return;
+        return origReplace.apply(this, arguments);
+      };
+    }
+
+    if (!window.__ccClickSingleFlight) {
+      window.__ccClickSingleFlight = true;
+      var navigating = false;
+      window.addEventListener('click', function(ev){
+        // Only act for primary button without modifiers
+        if (ev.defaultPrevented || ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
+        var el = ev.target && (ev.target.closest ? ev.target.closest('a,[role="link"],[data-href]') : null);
+        if (!el) return;
+        if (navigating) {
+          ev.stopImmediatePropagation();
+          ev.stopPropagation();
+          ev.preventDefault();
+          return;
+        }
+        navigating = true;
+        setTimeout(function(){ navigating = false; }, throttleMs);
+      }, true);
+    }
+  } catch (_) { /* no-op to avoid breaking page */ }
+})();
+
   function startNavCooldown(ms = 1200) {
     try { navCooldownUntil = Date.now() + Math.max(200, ms|0); } catch { navCooldownUntil = Date.now() + 1200; }
   }
